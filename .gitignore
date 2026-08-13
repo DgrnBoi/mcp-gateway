@@ -1,0 +1,36 @@
+# Compiled output
+mcp-gateway
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Local logs (audit and quarantine artifacts — never commit forensic data)
+audit.log
+violations.log
+dead_letter.log
+*.log
+*.jsonl
+
+# Coverage and benchmark artifacts
+coverage.out
+bench.txt
+cov.html
+
+# Fuzzing corpora and crash files
+fuzzdata/
+test_fuzz_corpus*/
+*.fuzz
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary test artifacts
+/tmp/
+testbin/
+*.tmp

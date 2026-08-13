@@ -1,0 +1,45 @@
+---
+# policy.yaml — the live policy the gateway hot-reloads on mtime change.
+# Kubernetes surfaces ConfigMap edits as file mtime bumps automatically,
+# which drives the 2-second reload poll with zero restart.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mcp-gateway-policy
+data:
+  policy.yaml: |
+    default_action: deny
+    rules:
+      - id: R-001
+        agent:
+          mtls_subject: spiffe://cluster.local/svc/frontend
+        tool:
+          name: get_contact
+        action: allow
+        reason: frontend service reads contacts for support UI
+  config.yaml: |
+    token:
+      audience: mcp-gateway
+    tls:
+      enabled: false
+    ratelimit:
+      enabled: true
+      requests_per_second: 50
+      burst: 50
+      include_in_alerts: false
+---
+# mTLS certificates for the gateway listener and client-identity CA bundle.
+# Rotation: update the Secret, then restart the pods (certs are load-once).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mcp-gateway-tls
+type: kubernetes.io/tls
+data:
+  # base64-encoded PEMs:
+  #   tls.crt  — gateway server certificate
+  #   tls.key  — gateway server private key
+  #   ca.crt   — trusted CA bundle (client certificate signers)
+  tls.crt: ""
+  tls.key: ""
+  ca.crt: ""

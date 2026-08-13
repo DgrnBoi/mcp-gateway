@@ -1,0 +1,51 @@
+# examples/team_policy.yaml — sales team layer.
+#
+# Teams NARROW the org baseline (deny or deny-with-redact) and ADD
+# specific allowances. A team allow that collides with an org deny
+# (same identity AND tool) is rejected at load time with
+# ErrShadowedInvariant — the central baseline can never be quietly
+# eroded by a team policy.
+#
+# Deployment:
+#   mcp-gateway --org-policy examples/org_policy.yaml \
+#               --team-policy examples/team_policy.yaml \
+#               --upstream http://localhost:8090 --listen :9090
+#
+# Multiple teams compose: repeat the flag once per team file,
+#   --team-policy sales.yaml --team-policy billing.yaml
+# and the hierarchy merges them in flag order (later teams cannot
+# shadow earlier ones — same collision rules apply).
+
+default_action: allow
+policy_layer: team
+
+rules:
+  # TEAM NARROWING: the org baseline leaves delete_record denied for
+  # everyone; the team makes that denial explicit for its own agents,
+  # which is how a team-owned rule (not just an org fallback) shows up
+  # in the audit trail when the rule fires.
+  - id: TEAM-001
+    agent: {client_id: sales-agent}
+    tool: {name: delete_record}
+    action: deny
+    reason: "team confirms the org invariant on its own agents"
+    expires_at: "2099-12-31T23:59:59Z"
+
+  # TEAM NARROWING WITH REDACTION: contact search is allowed by the org,
+  # but the team forces PII redaction before forwarding for its agents.
+  - id: TEAM-002
+    agent: {client_id: sales-agent}
+    tool: {name: search_contacts}
+    action: deny_with_redact
+    redact_keys: [email, phone]
+    reason: "PII redaction on outbound contact searches"
+    expires_at: "2099-12-31T23:59:59Z"
+
+  # TEAM ALLOWANCE: crm_write is a team-specific tool the org knows
+  # nothing about; the team opens it for its agents.
+  - id: TEAM-003
+    agent: {client_id: sales-agent}
+    tool: {name: crm_write}
+    action: allow
+    reason: "team-managed CRM writes"
+    expires_at: "2099-12-31T23:59:59Z"

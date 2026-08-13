@@ -1,0 +1,48 @@
+# examples/org_policy.yaml — central security team baseline.
+#
+# This is the ORG layer of the Stage 5 / Ticket 19 inheritance hierarchy.
+# It defines the invariants every team must inherit: the hard deny rules
+# (which cannot be shadowed by any team allow), the org-wide allowances,
+# and the org default action applied to org-known identities that no rule
+# matches.
+#
+# Deployment:
+#   mcp-gateway --org-policy examples/org_policy.yaml \
+#               --team-policy examples/team_policy.yaml \
+#               --upstream http://localhost:8090 --listen :9090
+
+default_action: deny
+policy_layer: org
+
+rules:
+  # HARD INVARIANT: no agent may delete records, full stop. The identity
+  # scope anchors audit attribution (who the org had in mind), but the
+  # runtime enforcement locks the tool for EVERY agent — a scoped org
+  # deny that only applied to its named agent would be bypassed by an
+  # agent simply presenting different identity claims.
+  - id: ORG-001
+    agent: {client_id: hr-agent}
+    tool: {name: delete_record}
+    action: deny
+    reason: "data retention invariant: record deletion is a legal hold"
+    expires_at: "2099-12-31T23:59:59Z"
+
+  # ORG-WIDE ALLOWANCE: contact search is granted to the identity the
+  # org provisions. It retains its identity scope — unscoped callers
+  # fall through to the default-resolution path instead.
+  - id: ORG-002
+    agent: {client_id: sales-agent}
+    tool: {name: search_contacts}
+    action: allow
+    reason: "org-wide contact search allowance"
+    expires_at: "2099-12-31T23:59:59Z"
+
+  # UNIVERSAL ORG DENY: the "any-agent" wildcard closes the tool for
+  # every caller. Universal org denies sit last in the merged walk so
+  # org-wide allows on known identities still win for their subjects.
+  - id: ORG-003
+    agent: {client_id: any-agent}
+    tool: {name: internal_ping}
+    action: deny
+    reason: "internal tooling is never exposed through the agent surface"
+    expires_at: "2099-12-31T23:59:59Z"

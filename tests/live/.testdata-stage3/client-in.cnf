@@ -1,0 +1,3 @@
+[v3] basicConstraints = CA:FALSE
+extendedKeyUsage = clientAuth
+subjectAltName = URI:spiffe://internal/hr-agent

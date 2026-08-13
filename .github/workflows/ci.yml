@@ -1,0 +1,72 @@
+name: MCP Gateway CI
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25'
+
+    # FIX #3: The old grep regex required "import (" and "net/http" on the
+    # SAME LINE, which real Go imports never are — the gate never fired.
+    # This version searches every line independently and covers pkg/core too.
+    - name: Enforce transport-agnostic core (no HTTP imports)
+      run: |
+        set -e
+        VIOLATIONS=$(grep -rn '"net/http"' pkg/policy/ pkg/audit/ pkg/core/ || true)
+        if [ -n "$VIOLATIONS" ]; then
+          echo "FAIL: transport-agnostic core must not import net/http:"
+          echo "$VIOLATIONS"
+          exit 1
+        fi
+        echo "OK: no net/http imports in policy/audit/core"
+
+    - name: Unit tests with coverage (>= 80%)
+      run: |
+        go test -coverprofile=coverage.out ./pkg/...
+        go tool cover -func=coverage.out | grep -E '^\s*total' | awk '{gsub(/%/,"",$3); if ($3 < 80) {print "Coverage " $3 "% is below 80%"; exit 1}}'
+
+    - name: Latency benchmark gate (<= 5ms per op)
+      run: |
+        go test -bench=BenchmarkEvaluate -benchtime=2s ./pkg/policy/... | tee bench.txt
+        # Fail if ANY benchmark line exceeds 5,000,000 ns/op.
+        # NOTE: "p99 <= 5ms" requires a real latency benchmark harness
+        # (percentile measurement); ns/op is the mean. Kept as mean gate
+        # for now; the harness arrives with the transport layer.
+        # FIX #4: the previous gate read field $4, which is the literal unit
+        # string "ns/op" — the [0-9]* case never matched and every benchmark
+        # line was silently skipped, so the gate never fired (verified with
+        # a synthetic 6,000,000 ns/op line). Field $3 carries the value.
+        while read -r line; do
+          ns=$(echo "$line" | awk '{print $3}')
+          name=$(echo "$line" | awk '{print $1}')
+          case "$ns" in
+            [0-9]*) ;; # numeric ns value
+            *) continue ;; # benchmark result lines we don't parse
+          esac
+          if [ -n "$ns" ] && [ "$(echo "$ns > 5000000" | bc)" -eq 1 ]; then
+            echo "LATENCY GATE FAILED: $name took $ns ns/op (limit 5,000,000)"
+            exit 1
+          fi
+        done < <(grep 'ns/op' bench.txt)
+        echo "OK: all benchmarks under 5ms"
+
+    - name: Adversarial test suite
+      run: |
+        # The adversarial JSON fixtures live in tests/adversarial/attacks/ but are
+        # exercised by the real gateway handler tests in pkg/server (the transport
+        # layer normalizes and evaluates the raw attack payloads).
+        go test -v -run TestGateway_SqlInjectionFixture_EndToEnd ./pkg/server/
+
+    - name: Build sidecar binary (static, no CGO)
+      run: |
+        CGO_ENABLED=0 GOOS=linux go build -o mcp-gateway ./cmd/mcp-gateway
+        echo "OK: sidecar binary built"

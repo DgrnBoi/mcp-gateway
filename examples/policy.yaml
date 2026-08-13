@@ -1,0 +1,85 @@
+# MCP Security Gateway — production policy example
+#
+# default_action: deny is the secure default. Every tool call from every
+# agent is denied unless an explicit rule matches. Unknown agents are
+# anonymous: they match rules with an empty agent: block and can never
+# inherit an allow from a named-agent rule.
+#
+# ADR-002 schema (frozen after partner review):
+#   agent:      identity match (client_id | mtls_subject | token_hash_prefix)
+#   tool:       tool match (name | pattern)
+#   action:     allow | deny | deny_with_redact | allow_all
+#   reason:     human-readable justification, required on deny variants
+#   redact_keys: keys stripped from the quarantined payload before replay
+#   expires_at: required on allow_all; optional on opt-in allows
+#
+# NOTE: allow_all is an escape hatch with mandatory reason + expiry.
+#       Use it only when a policy loader (GitOps) controls the file.
+
+default_action: deny
+
+rules:
+  # ———————————————————————————————————————————————————————————
+  # Named agents: explicit allow-list for known identities.
+  # ———————————————————————————————————————————————————————————
+
+  - id: R-001
+    agent:
+      client_id: sales-copilot
+    tool:
+      name: search_contacts
+    action: allow
+
+  - id: R-002
+    agent:
+      client_id: etl-worker
+    tool:
+      name: read_customers
+    action: allow
+
+  # ———————————————————————————————————————————————————————————
+  # Explicit denials: document what is forbidden and why.
+  # ———————————————————————————————————————————————————————————
+
+  - id: R-003
+    agent:
+      client_id: sales-copilot
+    tool:
+      name: export_contacts_bulk
+    action: deny
+    reason: bulk export forbidden; use the approved analytics export tool
+
+  - id: R-004
+    agent:
+      client_id: etl-worker
+    tool:
+      name: execute_query
+    action: deny_with_redact
+    redact_keys:
+      - sql
+    reason: ad-hoc SQL is never replayed; quarantine strips the payload
+
+  # ———————————————————————————————————————————————————————————
+  # Pattern-based rules: catch whole tool families.
+  # ———————————————————————————————————————————————————————————
+
+  - id: R-005
+    agent: {}
+    tool:
+      pattern: "^admin_.*"
+    action: deny
+    reason: admin tools are out of scope for all agents
+
+  # ———————————————————————————————————————————————————————————
+  # allow_all escape hatch: requires reason AND expires_at.
+  # The loader rejects allow_all rules that lack either field.
+  # ———————————————————————————————————————————————————————————
+
+  - id: R-999
+    agent:
+      mtls_subject: "/CN=oncall-relay/O=Acme"
+    tool:
+      name: "*"
+    action: allow_all
+    reason: on-call incident access, reviewed in change CHG-0042
+    expires_at: "2026-09-01T00:00:00Z"

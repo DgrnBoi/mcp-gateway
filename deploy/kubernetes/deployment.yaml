@@ -1,0 +1,97 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-gateway
+  labels:
+    app: mcp-gateway
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: mcp-gateway
+  # Rolling updates must never drop policy enforcement coverage: keep one
+  # replica up while the new one passes readiness.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: mcp-gateway
+      annotations:
+        # Trigger a rollout when the ConfigMap/Secret content changes.
+        checksum/config: "" # populated by CI/CD or helm
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+      containers:
+        - name: gateway
+          image: mcp-gateway:v5
+          imagePullPolicy: IfNotPresent
+          args:
+            - --policy=/etc/mcp-gateway/policy.yaml
+            - --config=/etc/mcp-gateway/config.yaml
+            - --upstream=http://127.0.0.1:8090
+            - --listen=:9090
+            - --console=:9091
+            - --audit-log=/var/log/mcp-gateway/audit.log
+            - --violations-log=/var/log/mcp-gateway/violations.log
+          ports:
+            - name: proxy
+              containerPort: 9090
+              protocol: TCP
+            - name: console
+              containerPort: 9091
+              protocol: TCP
+          # The console (9091) is INTERNAL: never expose it via the Service.
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: "1"
+              memory: 256Mi
+          # livenessProbe: process responds on the console root. The readiness
+          # probe is stricter: it requires the policy to be loaded by pinging
+          # the proxy port — Kubernetes only routes traffic to ready pods.
+          livenessProbe:
+            httpGet:
+              path: /
+              port: console
+              scheme: HTTP
+            initialDelaySeconds: 2
+            periodSeconds: 10
+            timeoutSeconds: 2
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: proxy
+              scheme: HTTP
+            initialDelaySeconds: 1
+            periodSeconds: 3
+            timeoutSeconds: 2
+            failureThreshold: 3
+          volumeMounts:
+            - name: policy
+              mountPath: /etc/mcp-gateway
+              readOnly: true
+            - name: certs
+              mountPath: /etc/mcp-gateway/tls
+              readOnly: true
+            - name: log
+              mountPath: /var/log/mcp-gateway
+      volumes:
+        - name: policy
+          configMap:
+            name: mcp-gateway-policy
+        - name: certs
+          secret:
+            secretName: mcp-gateway-tls
+        - name: log
+          emptyDir: {}

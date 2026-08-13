@@ -1,0 +1,30 @@
+# MCP Security Gateway — webhook/alerting configuration
+#
+# Pass with --config at startup. Webhooks are optional: leaving the file
+# empty disables alerting entirely (deny decisions are still audited and
+# quarantined).
+#
+# Startup hard-fail: if an observer is enabled but its endpoint is empty
+# (slack.url or pagerduty.routing_key), the gateway refuses to start.
+# This prevents "alerting enabled" in policy with nothing to alert to.
+
+webhooks:
+  slack:
+    enabled: true
+    # Full webhook URL (not the token). One message per violation,
+    # async, retried with backoff; permanently undeliverable events
+    # are written to a durable dead-letter queue on disk.
+    url: "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
+
+  pagerduty:
+    enabled: true
+    # Events v2 API integration key. A critical incident fires per
+    # fingerprint (SHA-256(ClientID|TokenHash|MTLSSubject)) only when
+    # weighted violations exceed the threshold inside the sliding
+    # window; re-alerts for the same identity are muted for the
+    # suppression window.
+    routing_key: "00000000000000000000000000000000"
+    # Advanced knobs (optional; sensible defaults ship without them):
+    # threshold: 5            # weighted violations to exceed before fire
+    # window: 60s             # sliding-window span
+    # suppression_window: 5m  # mute after firing for the same identity

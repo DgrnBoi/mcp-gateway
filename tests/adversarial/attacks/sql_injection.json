@@ -1,0 +1,11 @@
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "read_customer_data",
+    "arguments": {
+      "customer_id": "1 OR 1=1; DROP TABLE users;"
+    }
+  },
+  "id": 2
+}
