@@ -6,7 +6,6 @@ class H(http.server.BaseHTTPRequestHandler):
         params = req.get("params") or {}
         if req.get("method") == "tools/call":
             print(f"upstream: tool={params.get('name')} args={params.get('arguments')}")
-        print(f"upstream: x-mcpgw-identity={self.headers.get('X-Mcpgw-Identity', '')}")
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.end_headers()

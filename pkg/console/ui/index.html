@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MCP Gateway — Triage Console</title>
+<style>
+  :root{--bg:#0f1419;--panel:#161c23;--border:#26303c;--text:#d9e2ec;--muted:#8b98a5;--allow:#3fb950;--deny:#f85149;--redact:#d29922;--accent:#58a6ff}
+  *{box-sizing:border-box}
+  body{margin:0;font:13px/1.5 ui-monospace,"SFMono-Regular",Consolas,monospace;background:var(--bg);color:var(--text)}
+  header{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+  h1{font-size:14px;margin:0;font-weight:600}
+  .stats{display:flex;gap:16px;color:var(--muted)}
+  .stats b{color:var(--text)}
+  .stats .allow b{color:var(--allow)} .stats .deny b{color:var(--deny)} .stats .redact b{color:var(--redact)}
+  main{display:grid;grid-template-columns:1fr 340px;height:calc(100vh - 49px)}
+  table{width:100%;border-collapse:collapse}
+  th,td{padding:6px 10px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap}
+  th{color:var(--muted);font-weight:500;position:sticky;top:0;background:var(--panel)}
+  .rows{overflow:auto;height:calc(100vh - 49px - 36px)}
+  .act{padding:1px 8px;border-radius:10px;font-weight:600}
+  .act.allow{background:rgba(63,185,80,.12);color:var(--allow)}
+  .act.deny{background:rgba(248,81,73,.12);color:var(--deny)}
+  .act.deny_with_redact{background:rgba(210,153,34,.12);color:var(--redact)}
+  aside{border-left:1px solid var(--border);background:var(--panel);padding:14px;overflow:auto}
+  aside h2{font-size:12px;margin:0 0 8px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+  .kv{margin:0 0 8px;word-break:break-all}
+  .kv b{color:var(--muted);font-weight:400;display:block;font-size:11px}
+  pre{margin:0;background:#0a0e13;border:1px solid var(--border);border-radius:4px;padding:8px;overflow:auto;font-size:11px}
+  .empty{color:var(--muted);padding:20px;text-align:center}
+  .live{color:var(--allow)}
+  .loadmore{padding:10px;text-align:center;color:var(--accent);cursor:pointer;border-top:1px solid var(--border)}
+</style>
+</head>
+<body>
+<header>
+  <h1>MCP Gateway — Triage Console</h1>
+  <div class="stats">
+    <span class="allow">allow <b id="statAllow">0</b></span>
+    <span class="deny">deny <b id="statDeny">0</b></span>
+    <span class="redact">redact <b id="statRedact">0</b></span>
+    <span class="live">● live</span>
+  </div>
+</header>
+<main>
+  <section>
+    <div class="rows">
+      <table>
+        <thead><tr><th>Time</th><th>Agent</th><th>Tool</th><th>Transport</th><th>Action</th><th>Rule</th><th>Latency</th></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <div id="loadmore" class="loadmore" onclick="loadMore()">load older events</div>
+    </div>
+  </section>
+  <aside id="detail">
+    <h2>Violation detail</h2>
+    <p class="empty">Select a denied or redacted event to inspect the quarantined payload.</p>
+  </aside>
+</main>
+
+<script>
+const base = "/_console";
+let offset = 0;
+const PAGE = 50;
+const stats = {allow:0, deny:0, deny_with_redact:0};
+let newestSeen = null; // timestamp of newest rendered row (for live prepend)
+
+function fmtMs(ns){ return ns>=1e6?(ns/1e6).toFixed(2)+"ms":Math.round(ns/1000)+"µs" }
+
+function row(e, prepend){
+  const tr = document.createElement("tr");
+  tr.dataset.qid = e.quarantine_id || "";
+  tr.style.cursor = e.quarantine_id ? "pointer" : "default";
+  tr.innerHTML = `<td>${e.timestamp.slice(11,23)}</td><td>${e.identity.client_id||"—"}</td><td>${e.tool||"—"}</td>`
+    + `<td>${e.transport}</td><td><span class="act ${e.action}">${e.action}</span></td><td>${e.rule_id}</td><td>${fmtMs(e.latency_ns)}</td>`;
+  if (e.quarantine_id) tr.onclick = () => showDetail(e.quarantine_id);
+  const tb = document.getElementById("tbody");
+  if (prepend && tb.firstChild) tb.insertBefore(tr, tb.firstChild);
+  else tb.appendChild(tr);
+}
+
+function updateStats(e){ if (stats[e.action] !== undefined){ stats[e.action]++; document.getElementById("stat"+actionCap(e.action)).textContent = stats[e.action] } }
+function actionCap(a){ return a==="deny_with_redact"?"Redact":a==="deny"?"Deny":"Allow" }
+
+async function loadMore(){
+  const res = await fetch(`${base}/api/audit?offset=${offset}&limit=${PAGE}`);
+  const events = await res.json();
+  if (!events.length){ document.getElementById("loadmore").style.display="none"; return }
+  events.forEach(e => { row(e, false); updateStats(e) });
+  offset += events.length;
+  newestSeen = events[events.length-1].timestamp;
+}
+
+async function showDetail(qid){
+  const aside = document.getElementById("detail");
+  try {
+    const res = await fetch(`${base}/api/violations/${encodeURIComponent(qid)}`);
+    if (!res.ok){ aside.innerHTML = `<h2>Quarantine ${qid}</h2><p class="empty">Payload expired or not available.</p>`; return }
+    const v = await res.json();
+    aside.innerHTML = `<h2>Quarantine ${qid}</h2>`
+      + `<p class="kv"><b>Rule</b>${v.rule_id}</p>`
+      + `<p class="kv"><b>Verbatim original payload</b></p><pre></pre>`;
+    aside.querySelector("pre").textContent = JSON.stringify(JSON.parse(v.raw_params), null, 2);
+  } catch(err){ aside.innerHTML = `<h2>Quarantine ${qid}</h2><p class="empty">Fetch failed.</p>` }
+}
+
+// Live SSE feed: new events prepend to the top.
+const src = new EventSource(`${base}/api/events/stream`);
+src.onmessage = (ev) => {
+  try {
+    const e = JSON.parse(ev.data);
+    // only events newer than the newest we've already rendered
+    if (newestSeen && e.timestamp <= newestSeen) return;
+    row(e, true); updateStats(e);
+  } catch(_){}
+};
+
+loadMore();
+</script>
+</body>
+</html>

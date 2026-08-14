@@ -24,9 +24,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--kid", default="gateway-key", help="JWK key id (default gateway-key)")
 parser.add_argument("--aud", default=None, help="audience claim (default mcpgw-test)")
 parser.add_argument("--exp", type=int, default=600, help="token lifetime in seconds from now (default 600)")
-parser.add_argument("--key", default=KEY_PATH, help="private key PEM (default testdata gateway-key.pem)")
 args = parser.parse_args()
-KEY_PATH = args.key
 
 with open(KEY_PATH, "rb") as f:
     private_key = serialization.load_pem_private_key(f.read(), password=None)
@@ -58,4 +56,4 @@ from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
 r, s = decode_dss_signature(der_sig)
 curve_bytes = private_key.key_size // 8
 sig = r.to_bytes(curve_bytes, "big") + s.to_bytes(curve_bytes, "big")
-print(f"{seg1}.{seg2}.{b64u(sig)}")  # RFC 7515 fixed-length r||s
+print(f"{seg1}.{seg2}.{b64u(sig)}")
