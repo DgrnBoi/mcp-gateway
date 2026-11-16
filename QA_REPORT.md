@@ -1,6 +1,6 @@
-# MCP Security Gateway — Quality Assurance Report
+﻿# MCP Security Gateway — Quality Assurance Report
 
-**Product version:** v6 (post-release QA) · **Date:** August 13, 2026 · **Author:** Manus AI
+**Project:** MCP Security Gateway · **Author:** Eshaan Sunthankar
 
 This report documents the two-track quality assurance pass performed on the MCP Security Gateway after the v6 release: a **concept QA** that stress-tested the architecture against real-world deployment scenarios, and a **code QA** that ran the race detector, mutation fuzzing, static analysis, and meta-tests against the CI gates themselves. The pass found **three genuine defects** — one in the graceful-drain path, one in the forensic console, and one dormant bug inside the CI pipeline itself — all of which are now fixed and covered by regression tests.
 
